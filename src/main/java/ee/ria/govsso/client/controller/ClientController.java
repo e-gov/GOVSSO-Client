@@ -69,10 +69,22 @@ public class ClientController {
 
     @PostMapping(value = BACKCHANNEL_LOGOUT_MAPPING, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<Void> backChannelLogout(@RequestParam(name = "logout_token") String logoutToken) {
+        try {
+            DecodedJWT decodedLogoutToken = JWT.decode(logoutToken); //TODO remove com.auth0 dependency and use nimbus jwt instead
+            String sid = decodedLogoutToken.getClaim("sid").asString();
+            log.info("Received back-channel logout request for sid='{}'", sid);
+            expireOidcSessions(sid);
+        } catch (Exception e) {
+            log.error("Error processing back-channel logout request with logout_token='{}'", logoutToken);
+        }
         HttpHeaders responseHeaders = getHttpHeaders();
-        DecodedJWT decodedLogoutToken = JWT.decode(logoutToken); //TODO remove com.auth0 dependency and use nimbus jwt instead
-        log.info("Received back-channel logout request for sid='{}'", decodedLogoutToken.getClaim("sid"));
-        expireOidcSessions(decodedLogoutToken.getClaim("sid").asString());
+        // 200 should be returned when processing logout token is successful (even when the referenced session does not
+        // exist) or when a permanent error occurs (e.g. next time we would process logout token the same way and the
+        // same error would occur, therefore there is no point for GOVSSO to retry the request with exactly the same
+        // data).
+        // Non-200 should only be returned when we want GOVSSO to retry the request (with exactly the same data), e.g.
+        // for a temporary error (if there is a possibility that our processing would behave differently next time, for
+        // example if session storage in a real system is connected to an external component etc.).
         return new ResponseEntity<>(responseHeaders, HttpStatus.OK);
     }
 
